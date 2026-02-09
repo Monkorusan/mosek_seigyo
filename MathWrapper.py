@@ -1,5 +1,5 @@
 import numpy as np
-import mosek.fusion as mf
+import mosek.fusion as mf, Union
 from typing import Any
 
 def block(rows):
@@ -13,10 +13,16 @@ def block(rows):
     return MathWrapper(mf.Expr.vstack(raw_rows)) #stack vertically then get block matrix
 
 class MathWrapper:
-    """Bypasses Mosek API's incomprehensble documentation with familiar Python (or Numpy) syntaxes"""
+    """Bypasses Mosek API's incomprehensible documentation with familiar Python (or Numpy) syntaxes"""
+    Expr: Any
 
-    def __init__(self,Expr)->None:
-        self.Expr = Expr
+    def __init__(self, obj: np.ndarray | 'MathWrapper' | Any):
+        if isinstance(obj,np.ndarray):      #if obj is numpy type, convert to mosek
+            self.Expr = mf.Matrix.dense(obj)
+        elif isinstance(obj, MathWrapper):  #if obj is mw type, access its expr attribute
+            self.Expr = obj.Expr
+        else:                               #if already is mosek type
+            self.Expr = obj 
 
     def __matmul__(self,other)-> 'MathWrapper':
         other_expr = other.Expr if isinstance(other,MathWrapper) else other 
@@ -65,6 +71,21 @@ class MathWrapper:
                 print("💢 warning: can not wrap the object passed in MathWrapper.__rshift__")
         return self - other # reminder: we reuse MathWrapper.__sub__(self,other) here.
 
+    def __lshift__(self,other)-> 'MathWrapper':
+        """
+        Syntax Sugar for LMI: returns A << B ,which is A ≺ B mathematically.
+        A ≺ B is equivalent to B - A ≻ 0
+        for more explanation, go read __rshift__ method's docstring.
+        """
+        if isinstance(other,(int,float)) and other == 0:
+            return self #handle P ≻ 0
+        if not isinstance(other,MathWrapper):
+            try:
+                other = MathWrapper(other)
+            except:
+                print("💢 warning: can not wrap the object passed in MathWrapper.__rshift__")
+        return self - other # reminder: we reuse MathWrapper.__sub__(self,other) here.
+
     @property
     def T(self)-> 'MathWrapper':
         """allowing access to a matrix's transpose with .T , handle both variable matrix and constant matrix"""
@@ -100,18 +121,22 @@ class MathWrapper:
     def val(self)->np.ndarray:
         """return numerical value after solving, because __str__ doesn't do that.
         This method works universally now! regardless of matrix being dense or sparse then return as matrix array instead of flattened one."""
-        try:
-            temp = self.Expr.level()
-        except AttributeError:
-            temp = self.Expr.getDataAsarray()
-        return np.array(temp).reshape(self.shape)
+        if hasattr(self.Expr,"level"):
+            return self.Expr.level()
+        else:
+            raise NotImplementedError("Can not get value of a non-variable expression")
     
     @staticmethod
     def ones(rows,cols=None)-> 'MathWrapper':
-        """create an identity matrix of size n just like np.eye(n)"""
+        """create an matrix  of size n filled with ones just like np.ones(n)"""
         if cols is None:
             cols = rows
         return MathWrapper(mf.Matrix.ones(rows,cols))
+    
+    @staticmethod
+    def eye(n:int)-> 'MathWrapper':
+        """create an identity matrix of size n just like np.ones(n)"""
+        return MathWrapper(mf.Matrix.eye(n))
     
     @staticmethod
     def zeros(rows,cols=None)-> 'MathWrapper':
@@ -141,27 +166,6 @@ class MathWrapper:
                 raise TypeError("ERROR, MathWrapper only support slicing for slice type and int type, use .pick() for lists")
         return MathWrapper(self.Expr.slice(startlist,endlist))
 
-def main():
-    with mf.Model("bla bla") as m:
-        A = MathWrapper(m.variable("A", mf.Domain.inPSDCone(4)))
-        A11 = A[0:2, 0:2]  
-        A12 = A[0:2, 2:4]
-        print(f"A11 = {A11}\n")
-        print(f"A12 = {A12}\n")
-
-if __name__ == "__main__":
-    main()
-
-
-# Works exactly like NumPy, but returns MOSEK Expressions.
-# templist = [[1,2,3],
-#             [4,5,6],
-#             [7,8,9]]
-# A = np.array(templist)
-# # print(A[0:2,0:2])
-# # print(A[0,2])
-# print(A[[0]])
-# print(A[0:1,:])
     
 
 

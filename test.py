@@ -31,26 +31,25 @@ class LyapunovIneqSolver(MosekSeigyo):
     def __init__(self, A: np.ndarray):
         super().__init__("Lyapunov_Check")
         self.A_np = np.array(A)
-        n = self.A_np.shape[0]
-        self._setup_geometry(n)
+        self.n = self.A_np.shape[0]
+        self._setup_geometry(self.n)
+
+    def solve_without_both_Wrappers(self):
+        with mf.Model(self.name) as M:
+            P = M.variable("P", self.psd_domain)
+            A = mf.Matrix.dense(self.A_np)
+            PA = mf.Expr.mul(P, A)
+            Q  = mf.Expr.add(PA, mf.Expr.transpose(PA))
+            M.constraint(mf.Expr.sub(P, self.I), self.psd_domain)
+            M.constraint(mf.Expr.sub(Q, self.I), self.psd_domain)
+            M.solve() 
         
-    def solve(self):
-        """without the MathWrapper, def solve would look something like this:
-            with mf.Model(self.name) as M:
-                P = M.variable("P", self.psd_domain)
-                A = mf.Matrix.dense(self.A_np)
-                PA = self.mul(P, A)
-                Q = mf.Expr.add(PA, mf.Expr.transpose(PA))
-                M.constraint(mf.Expr.sub(P, self.I), self.psd_domain)
-                M.constraint(mf.Expr.sub(Q, self.I), self.psd_domain)
-                M.solve() """
+    def solve_without_ModelWrapper(self):
         with mf.Model(self.name) as M:
             P = mw(M.variable("P", self.psd_domain))
             A = mw(mf.Matrix.dense(self.A_np))
             I = mw(self.I)
             Q = P@A + A.T@P
-            cnstr1 = P - I #P-I is pos semi def \equiv P is pos def
-            cnstr2 = Q - I
             M.constraint((P>>I).Expr, self.psd_domain)
             M.constraint((Q>>I).Expr, self.psd_domain)
             M.solve()
@@ -58,15 +57,14 @@ class LyapunovIneqSolver(MosekSeigyo):
             if status == mf.ProblemStatus.PrimalAndDualFeasible:
                 return P.val()
             
-    def solve2(self):
-        """without the ModelWrapper , declaring P,A,I requires instantiation with mw """
-        with mf.Model(self.name) as M:
+    def solve(self):
+        with ModelWrapper(self.name) as M:
             P = M.variable("P", self.psd_domain)
-            A = mw(mf.Matrix.dense(self.A_np))
-            I = mw(self.I)
+            A = M.matrix(self.A_np)
+            I = mw.eye(self.n)
             Q = P@A + A.T@P
-            M.constraint(P>>I, self.psd_domain)
-            M.constraint(Q>>I, self.psd_domain)
+            M.constraint(P>>I)
+            M.constraint(Q>>I)
             M.solve()
             status = M.getProblemStatus()
             if status == mf.ProblemStatus.PrimalAndDualFeasible:
