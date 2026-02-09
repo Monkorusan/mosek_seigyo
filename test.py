@@ -1,8 +1,9 @@
 import mosek.fusion as mf
 from abc import ABC, abstractmethod
 import numpy as np
-from Mathwrapper import Mathwrapper as mw
+from MathWrapper import MathWrapper as mw
 from typing import Any
+from ModelWrapper import ModelWrapper
 
 class MosekSeigyo(ABC):
     """Parent class: Holds the tools, but waits for dimensions."""
@@ -34,7 +35,7 @@ class LyapunovIneqSolver(MosekSeigyo):
         self._setup_geometry(n)
         
     def solve(self):
-        """without the Mathwrapper, def solve would look something like this:
+        """without the MathWrapper, def solve would look something like this:
             with mf.Model(self.name) as M:
                 P = M.variable("P", self.psd_domain)
                 A = mf.Matrix.dense(self.A_np)
@@ -42,9 +43,7 @@ class LyapunovIneqSolver(MosekSeigyo):
                 Q = mf.Expr.add(PA, mf.Expr.transpose(PA))
                 M.constraint(mf.Expr.sub(P, self.I), self.psd_domain)
                 M.constraint(mf.Expr.sub(Q, self.I), self.psd_domain)
-                M.solve()
-                status = M.getProblemStatus()
-                return status == mf.ProblemStatus.PrimalAndDualFeasible"""
+                M.solve() """
         with mf.Model(self.name) as M:
             P = mw(M.variable("P", self.psd_domain))
             A = mw(mf.Matrix.dense(self.A_np))
@@ -52,15 +51,27 @@ class LyapunovIneqSolver(MosekSeigyo):
             Q = P@A + A.T@P
             cnstr1 = P - I #P-I is pos semi def \equiv P is pos def
             cnstr2 = Q - I
-            # M.constraint(cnstr1.Expr, self.psd_domain)
             M.constraint((P>>I).Expr, self.psd_domain)
             M.constraint((Q>>I).Expr, self.psd_domain)
-            # M.constraint(cnstr2.Expr, self.psd_domain)
             M.solve()
             status = M.getProblemStatus()
             if status == mf.ProblemStatus.PrimalAndDualFeasible:
                 return P.val()
-
+            
+    def solve2(self):
+        """without the ModelWrapper , declaring P,A,I requires instantiation with mw """
+        with mf.Model(self.name) as M:
+            P = M.variable("P", self.psd_domain)
+            A = mw(mf.Matrix.dense(self.A_np))
+            I = mw(self.I)
+            Q = P@A + A.T@P
+            M.constraint(P>>I, self.psd_domain)
+            M.constraint(Q>>I, self.psd_domain)
+            M.solve()
+            status = M.getProblemStatus()
+            if status == mf.ProblemStatus.PrimalAndDualFeasible:
+                return P.val()
+            
 A = np.array([
     [ 2 ,-1 , 0],
     [-1 , 2 ,-1],
