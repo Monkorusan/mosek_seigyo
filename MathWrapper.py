@@ -1,5 +1,5 @@
 import numpy as np
-import mosek.fusion as mf, Union
+import mosek.fusion as mf
 from typing import Any
 
 def block(rows):
@@ -16,7 +16,7 @@ class MathWrapper:
     """Bypasses Mosek API's incomprehensible documentation with familiar Python (or Numpy) syntaxes"""
     Expr: Any
 
-    def __init__(self, obj: np.ndarray | 'MathWrapper' | Any):
+    def __init__(self, obj: np.ndarray | Any):
         if isinstance(obj,np.ndarray):      #if obj is numpy type, convert to mosek
             self.Expr = mf.Matrix.dense(obj)
         elif isinstance(obj, MathWrapper):  #if obj is mw type, access its expr attribute
@@ -35,6 +35,24 @@ class MathWrapper:
     def __sub__(self, other)-> 'MathWrapper':
         other_expr = other.Expr if isinstance(other,MathWrapper) else other
         return MathWrapper(mf.Expr.sub(self.Expr, other_expr))
+
+    def sqrt(self) -> 'MathWrapper':
+            """
+            Element-wise square root for CONSTANT matrices only.
+            """
+            # 1. check if we can extract data (is it a constant?)
+            if hasattr(self.Expr, "getDataAsArray"):
+                # Extract raw data -> Numpy Sqrt -> New Wrapper
+                raw_data = self.Expr.getDataAsArray() 
+                return MathWrapper(np.sqrt(raw_data))
+            
+            # 2. If it's a Variable, we strictly forbid this.
+            else:
+                raise TypeError(
+                    "Cannot call .sqrt() on a Variable directly in Mosek.\n"
+                    "You must use a Rotated Quadratic Cone constraint instead:\n"
+                    "M.constraint(Expr.vstack(y, 0.5, t), Domain.inRotatedQCone())"
+                )
 
     def __getattr__(self,name)->Any: 
         """not to be confused with __getattribute__ which modifies how returned value is accessed"""
@@ -165,6 +183,22 @@ class MathWrapper:
             else:
                 raise TypeError("ERROR, MathWrapper only support slicing for slice type and int type, use .pick() for lists")
         return MathWrapper(self.Expr.slice(startlist,endlist))
+    
+    @staticmethod
+    def auto_bmat(row_list:list[list[Any]])-> 'MathWrapper':
+        """create block matrix where the 'None' part are assumed to be zero matrix automatically.
+        Inspiration? MATLAB's robust_control_toolbox LMIterm function! 
+        use example: 
+        auto_bmat([[ A ,   B  , None],
+                   [ C , None ,  D  ]]) 
+        this will return a AB0C0D where the zero block automatically adjusts its dimension along with nonzero matrices!!
+        """
+
+        final_expr = None
+        return MathWrapper(final_expr)
+
+
+        pass
 
     
 
