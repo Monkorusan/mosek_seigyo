@@ -207,7 +207,7 @@ class CartSystem:
     def __init__(
         self,
         M: int = 5,
-        mi: list[float] | np.ndarray = None,
+        mi: list[float] | np.ndarray | None = None,
         mp: float = 1.0,
         l: float = 1.0,
         g: float = 9.81,
